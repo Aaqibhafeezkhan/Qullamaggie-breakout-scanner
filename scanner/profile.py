@@ -62,7 +62,7 @@ def fetch_stock_profiles(
     cached = cache.get_json("profiles", max_age_hours=PROFILE_CACHE_TTL_HOURS)
     profiles: dict[str, dict] = cached if cached else {}
 
-    to_fetch = [t for t in tickers[:limit] if t not in profiles]
+    to_fetch = [t for t in tickers[:limit] if "quote_type" not in profiles.get(t, {})]
     if not to_fetch:
         return profiles
 

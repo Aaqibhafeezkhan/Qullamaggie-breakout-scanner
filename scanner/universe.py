@@ -16,6 +16,7 @@ from .config import (
 
 # SEC EDGAR provides all SEC-registered companies with exchange info.
 _SEC_URL = "https://www.sec.gov/files/company_tickers_exchange.json"
+_NASDAQ_TRADER_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqtraded.txt"
 _TARGET_EXCHANGES = {"NYSE", "Nasdaq"}
 
 
@@ -25,11 +26,11 @@ def fetch_ticker_list(cache: Cache) -> list[str]:
     Uses SEC EDGAR's company_tickers_exchange.json which includes
     exchange information. Results cached for 7 days.
     """
-    cached = cache.get_json("ticker_list_v2", max_age_hours=CACHE_UNIVERSE_TTL_HOURS)
+    cached = cache.get_json("ticker_list_v3", max_age_hours=CACHE_UNIVERSE_TTL_HOURS)
     if cached is not None:
         return cached
 
-    tickers = _fetch_sec_tickers()
+    tickers = _fetch_sec_tickers(cache)
 
     result = sorted(tickers)
     if not result:
@@ -37,7 +38,7 @@ def fetch_ticker_list(cache: Cache) -> list[str]:
             "Failed to fetch any tickers. Check your internet connection."
         )
 
-    cache.set_json("ticker_list_v2", result)
+    cache.set_json("ticker_list_v3", result)
     return result
 
 
@@ -103,6 +104,19 @@ def _is_fund_name(name: str) -> bool:
     return bool(words & FUND_NAME_KEYWORDS)
 
 
+def _is_fund(name: str, ticker: str, etf_flagged: set[str]) -> bool:
+    """True if a ticker should be excluded as a fund, by either signal.
+
+    Keyword match catches closed-end funds (USA, IGR, ACP, ADX -- all
+    ETF=N in Nasdaq Trader's own data). The flag catches true ETFs with
+    a keyword-free name (WEAT: "Teucrium Commodity Trust", CORN, CANE).
+    Neither signal alone is sufficient.
+    """
+    if ticker in etf_flagged:
+        return True
+    return isinstance(name, str) and _is_fund_name(name)
+
+
 def _download_sec_data() -> list[list]:
     """Download SEC EDGAR company tickers with exchange info.
 
@@ -124,9 +138,59 @@ def _download_sec_data() -> list[list]:
         return []
 
 
-def _fetch_sec_tickers() -> set[str]:
+def _download_nasdaq_traded() -> list[list[str]]:
+    """Download the Nasdaq Trader symbol directory (nasdaqtraded.txt).
+
+    A true open-end ETF (WEAT: "Teucrium Commodity Trust", CORN, CANE)
+    often carries no fund keyword in its SEC-registered name, so
+    _is_fund_name misses it. This file's own ETF column flags it
+    directly, Y or N, independent of naming. It does NOT flag closed-end
+    funds (USA, IGR, ACP, ADX all show ETF=N here) -- those stay caught
+    by the keyword filter, so this supplements it rather than replacing
+    it. Also missing some real NYSE tickers entirely (confirmed: BLFS,
+    DBRG, DRCT), so SEC EDGAR stays the base universe source.
+    """
+    req = urllib.request.Request(
+        _NASDAQ_TRADER_URL,
+        headers={"User-Agent": "qullamaggie-scanner vlad@example.com"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            text = resp.read().decode()
+    except urllib.error.URLError as exc:
+        print(f"  Warning: could not fetch Nasdaq Trader symbol directory: {exc}")
+        return []
+
+    lines = text.strip().split("\n")
+    # Last line is "File Creation Time: ..." footer, not data.
+    return [row for line in lines[1:-1] if len(row := line.split("|")) >= 8]
+
+
+def _fetch_etf_flagged_tickers(cache: Cache | None = None) -> set[str]:
+    """Return tickers Nasdaq Trader's own data flags as ETF=Y.
+
+    Cached 7 days like the ticker list, since this changes rarely.
+    cache is optional so this still works standalone (tests, ad hoc
+    checks); without one the flag set is fetched fresh, uncached.
+    """
+    if cache is not None:
+        cached = cache.get_json("etf_flags", max_age_hours=CACHE_UNIVERSE_TTL_HOURS)
+        if cached is not None:
+            return set(cached)
+
+    rows = _download_nasdaq_traded()
+    flagged = {row[1] for row in rows if row[5] == "Y" and row[7] == "N"}
+
+    if cache is not None and flagged:
+        cache.set_json("etf_flags", sorted(flagged))
+
+    return flagged
+
+
+def _fetch_sec_tickers(cache: Cache | None = None) -> set[str]:
     """Return set of common-stock tickers on NYSE/NASDAQ from SEC EDGAR."""
     rows = _download_sec_data()
+    etf_flagged = _fetch_etf_flagged_tickers(cache)
     tickers: set[str] = set()
     for row in rows:
         if len(row) < 4:
@@ -138,11 +202,10 @@ def _fetch_sec_tickers() -> set[str]:
             continue
         if not isinstance(ticker, str) or not _is_common_stock_ticker(ticker):
             continue
-        if isinstance(name, str) and _is_fund_name(name):
+        if _is_fund(name, ticker, etf_flagged):
             continue
         tickers.add(ticker)
     return tickers
-
 
 def _fetch_sec_ticker_names() -> dict[str, str]:
     """Return {ticker: company_name} for NYSE/NASDAQ stocks."""

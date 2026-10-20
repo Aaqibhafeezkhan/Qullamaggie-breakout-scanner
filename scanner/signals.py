@@ -352,6 +352,14 @@ def print_signals(signals: list[Signal], summary: dict) -> None:
         f"Max hold: {MAX_HOLD_DAYS}d"
     )
 
+    skip_counts = {k: v for k, v in summary.get("skip_reasons", {}).items() if v}
+    if skip_counts:
+        print(
+            f"  Considered: {summary.get('candidates_considered', 0)}   "
+            f"Skipped: {summary.get('candidates_skipped', 0)} "
+            f"({', '.join(f'{k}: {v}' for k, v in skip_counts.items())})"
+        )
+
     if not signals:
         reason = summary.get(
             "reason_no_signals",
