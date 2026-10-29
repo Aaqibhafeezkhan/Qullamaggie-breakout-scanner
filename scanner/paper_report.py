@@ -127,7 +127,7 @@ def _t_critical_95(df: int) -> float:
         11: 2.201, 12: 2.179, 13: 2.160, 14: 2.145, 15: 2.131,
         16: 2.120, 17: 2.110, 18: 2.101, 19: 2.093, 20: 2.086,
         21: 2.080, 22: 2.074, 23: 2.069, 24: 2.064, 25: 2.060,
-        26: 2.056, 27: 2.052, 28: 2.048, 29: 2.045,
+        26: 2.056, 27: 2.052, 28: 2.048, 29: 2.045, 30: 2.042,
     }
     return critical.get(df, 1.96)
 
@@ -191,7 +191,8 @@ def _gate_status(
     if ci is not None:
         ci_lo, ci_hi = ci
         edge_met = ci_lo > 0
-        edge_detail = f"mean {mean_r:+.3f}R [95% CI {ci_lo:+.3f} to {ci_hi:+.3f}R; n={r_n}]"
+        se_r = std_r / sqrt(r_n) if std_r is not None and r_n else 0.0
+        edge_detail = f"mean {mean_r:+.3f}R (SE {se_r:.3f}R) [95% CI {ci_lo:+.3f} to {ci_hi:+.3f}R; n={r_n}]"
     else:
         edge_met = None
         missing = stats.get("trades_missing_risk", 0)
