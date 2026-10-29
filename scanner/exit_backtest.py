@@ -314,7 +314,9 @@ def run_exit_backtest():
     print()
     print("[2/4] Loading 3 years of price data (cached)...")
     cache = Cache(CACHE_DIR)
-    raw_tickers = fetch_ticker_list(cache)
+    # Union the picks' own tickers: saved picks can include funds the
+    # current universe filter drops, and they'd be skipped without prices.
+    raw_tickers = sorted(set(fetch_ticker_list(cache)) | {p["ticker"] for p in picks})
     price_data = download_prices(raw_tickers, cache, period=BACKTEST_PERIOD)
     print(f"  Have data for {len(price_data):,} tickers")
 

@@ -7,6 +7,7 @@ Float/SI/sector are fetched from yfinance Ticker.info (slow, cached 30 days).
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date as dt_date
 
 import numpy as np
 import pandas as pd
@@ -56,13 +57,15 @@ def fetch_stock_profiles(
 ) -> dict[str, dict]:
     """Fetch float, short interest, and sector from yfinance.
 
-    Only fetches the first *limit* tickers that aren't already cached.
-    Cached for 30 days since these fields change slowly.
+    Only fetches the first *limit* tickers whose cached entry is missing,
+    failed, older than 30 days, or past its next earnings date. The file's
+    own mtime can't age entries out — it is rewritten on every fetch.
     """
     cached = cache.get_json("profiles", max_age_hours=PROFILE_CACHE_TTL_HOURS)
     profiles: dict[str, dict] = cached if cached else {}
 
-    to_fetch = [t for t in tickers[:limit] if t not in profiles]
+    today = dt_date.today()
+    to_fetch = [t for t in tickers[:limit] if _needs_refresh(profiles.get(t, {}), today)]
     if not to_fetch:
         return profiles
 
@@ -71,11 +74,40 @@ def fetch_stock_profiles(
         with tqdm(total=len(to_fetch), desc="  Fetching profiles", unit="stock") as pbar:
             for fut in as_completed(futures):
                 ticker = futures[fut]
-                profiles[ticker] = fut.result()
+                fresh = fut.result()
+                # A failed or stub fetch must not wipe a good cached entry;
+                # the old one stays due for refresh, so the next run retries.
+                if (fresh.get("quote_type") is not None
+                        or profiles.get(ticker, {}).get("quote_type") is None):
+                    profiles[ticker] = fresh
                 pbar.update(1)
 
     cache.set_json("profiles", profiles)
     return profiles
+
+
+def earnings_days_ago(profile: dict, today: dt_date | None = None) -> int | None:
+    """Days since the last earnings, aged by the days since the profile
+    was fetched. No earnings can fall in between: an entry is refetched
+    once its next earnings date has passed."""
+    days = profile.get("earnings_days_ago")
+    fetched = profile.get("fetched_at")
+    if days is None or fetched is None:
+        return days
+    return days + ((today or dt_date.today()) - dt_date.fromisoformat(fetched)).days
+
+
+def _needs_refresh(entry: dict, today: dt_date) -> bool:
+    """True if a cached profile should be fetched again."""
+    if entry.get("quote_type") is None:
+        return True  # never fetched, failed ({}), or a stub info response
+    fetched = entry.get("fetched_at")
+    if fetched is None:
+        return True  # cached before entries carried a fetch date
+    if (today - dt_date.fromisoformat(fetched)).days * 24 > PROFILE_CACHE_TTL_HOURS:
+        return True
+    next_earnings = entry.get("next_earnings")
+    return next_earnings is not None and dt_date.fromisoformat(next_earnings) < today
 
 
 def _fetch_one(ticker: str) -> dict:
@@ -95,6 +127,8 @@ def _fetch_one(ticker: str) -> dict:
             "short_ratio": info.get("shortRatio"),
             "sector": info.get("sector"),
             "industry": info.get("industry"),
+            "quote_type": info.get("quoteType"),
+            "fetched_at": dt_date.today().isoformat(),
             **earnings,
         }
     except Exception:

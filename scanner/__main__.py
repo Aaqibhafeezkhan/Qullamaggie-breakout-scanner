@@ -26,7 +26,7 @@ from .factors.market_context import compute_market_context
 from .factors.relative_strength import compute_sector_etf_returns, compute_universe_rs
 from .factors.volume import compute_volume
 from .factors.weekly import compute_weekly
-from .profile import compute_abr, fetch_stock_profiles
+from .profile import compute_abr, earnings_days_ago, fetch_stock_profiles
 from .ranking import rank_watchlist
 from .signals import generate_signals, print_signals, save_signals
 from .tracker import compute_track_record
@@ -198,12 +198,13 @@ def main(
         profile = profiles.get(stock["ticker"], {})
         stock["float_shares"] = profile.get("float_shares")
         stock["float_label"] = profile.get("float_label", "")
+        stock["quote_type"] = profile.get("quote_type")
         stock["short_pct_float"] = profile.get("short_pct_float")
         stock["short_ratio"] = profile.get("short_ratio")
         stock["sector"] = profile.get("sector", "")
         stock["industry"] = profile.get("industry", "")
         stock["next_earnings"] = profile.get("next_earnings")
-        stock["earnings_days_ago"] = profile.get("earnings_days_ago")
+        stock["earnings_days_ago"] = earnings_days_ago(profile)
 
         # Classify catalyst as earnings-related if spike happened near earnings
         earn_ago = stock.get("earnings_days_ago")

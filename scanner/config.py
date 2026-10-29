@@ -17,6 +17,28 @@ MIN_AVG_VOLUME = 500_000
 VOLUME_AVG_PERIOD = 20  # days used for avg-volume filter
 
 # ---------------------------------------------------------------------------
+# Non-equity name filter — an SEC company name containing any of these
+# whole words (case-insensitive) is treated as a fund and dropped from the
+# universe. TRUST and PORTFOLIO alone are left out: they appear in real
+# company names (Northern Trust, REITs, Consumer Portfolio Services).
+# FUND_NAME_PHRASES catches the "...Trust" closed-end funds and commodity
+# trusts by word sequence instead. INCOME TRUST is left out because it
+# matches REITs (UHT, OPI). Other layers: the Nasdaq Trader ETF flag in
+# universe.py (keyword-free ETFs such as WEAT), and the quote_type check in
+# signals.py (ETF/MUTUALFUND only — Yahoo types closed-end funds EQUITY).
+# ---------------------------------------------------------------------------
+FUND_NAME_KEYWORDS = {
+    "ETF", "ETN", "FUND", "INDEX", "SHARES", "PROSHARES",
+}
+FUND_NAME_PHRASES = (
+    "EQUITY TRUST", "TERM TRUST", "UTILITY TRUST", "DIVIDEND TRUST",
+    "MUNICIPAL TRUST", "INCOME PORTFOLIO",
+    "PHYSICAL GOLD", "PHYSICAL SILVER", "PHYSICAL PLATINUM",
+    "GOLD TRUST", "SILVER TRUST", "COMMODITY TRUST",
+    "BITCOIN TRUST", "ETHEREUM TRUST",
+)
+
+# ---------------------------------------------------------------------------
 # Data download
 # ---------------------------------------------------------------------------
 PRICE_HISTORY_PERIOD = "1y"  # yfinance period string
