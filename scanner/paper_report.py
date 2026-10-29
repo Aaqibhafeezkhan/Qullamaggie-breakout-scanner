@@ -59,7 +59,7 @@ def _trade_stats(trades: list[dict]) -> dict:
     r_n = len(r_values)
     r_mean = sum(r_values) / r_n if r_n else None
     r_std = sqrt(sum((value - r_mean) ** 2 for value in r_values) / (r_n - 1)) if r_n > 1 else None
-    r_ci = _mean_ci_95(r_values) if r_n >= 2 else None
+    r_ci = _mean_ci_95(r_values) if r_n >= 2 and r_n == len(trades) else None
 
     stats.update({
         "r_n": r_n,
