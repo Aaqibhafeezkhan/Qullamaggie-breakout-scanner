@@ -262,8 +262,11 @@ def generate_signals(
             summary["skip_reasons"]["no_atr"] += 1
             continue
 
-         # Quick reject: fund/ETF that slipped past the universe-level name
-        # filter (backstop only — see universe.py _is_fund_name)
+        # Quick reject: ETF/mutual fund that slipped past the universe-level
+        # fund filters (backstop only — see universe.py _is_fund). Yahoo
+        # types closed-end funds EQUITY, so those rely on the name filter;
+        # None (unprofiled or failed fetch) passes so a Yahoo outage can't
+        # block every signal.
         if stock.get("quote_type") not in (None, "EQUITY"):
             summary["candidates_skipped"] += 1
             summary["skip_reasons"]["not_equity"] += 1
@@ -363,8 +366,7 @@ def print_signals(signals: list[Signal], summary: dict) -> None:
     if not signals:
         reason = summary.get(
             "reason_no_signals",
-            f"considered {summary['candidates_considered']}, "
-            f"skipped all ({', '.join(f'{k}: {v}' for k, v in summary['skip_reasons'].items() if v)})",
+            f"considered {summary['candidates_considered']}, skipped all",
         )
         print(f"  No signals issued — {reason}")
         print()
